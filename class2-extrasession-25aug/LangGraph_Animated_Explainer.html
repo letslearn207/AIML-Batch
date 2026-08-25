@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LangGraph — Stateful Agent Orchestration</title>
+<style>
+  :root{
+    --ink:#0B1220;
+    --ink-2:#0F1B2E;
+    --panel:#121F35;
+    --line:#22334D;
+    --line-soft:#1A2740;
+    --teal:#33E6C8;
+    --teal-dim:#1B7A6B;
+    --amber:#FFB454;
+    --amber-dim:#8A5B22;
+    --violet:#9B8CFF;
+    --text:#EAF0F7;
+    --text-dim:#8FA3BE;
+    --text-faint:#5A6E8C;
+    --mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+    --display: 'Space Grotesk', 'Inter', sans-serif;
+    --body: 'Inter', -apple-system, sans-serif;
+  }
+
+  *{box-sizing:border-box; margin:0; padding:0;}
+
+  html{scroll-behavior:smooth;}
+
+  body{
+    background:var(--ink);
+    color:var(--text);
+    font-family:var(--body);
+    line-height:1.6;
+    overflow-x:hidden;
+  }
+
+  ::selection{ background:var(--teal); color:var(--ink); }
+
+  /* faint circuit-grid backdrop */
+  .grid-backdrop{
+    position:fixed; inset:0; z-index:0; pointer-events:none;
+    background-image:
+      linear-gradient(var(--line-soft) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line-soft) 1px, transparent 1px);
+    background-size:64px 64px;
+    opacity:0.35;
+    mask-image: radial-gradient(ellipse 80% 60% at 50% 20%, black 20%, transparent 75%);
+  }
+
+  .wrap{ position:relative; z-index:1; max-width:1080px; margin:0 auto; padding:0 32px; }
+
+  /* ---------- NAV ---------- */
+  nav{
+    position:sticky; top:0; z-index:50;
+    backdrop-filter: blur(10px);
+    background:rgba(11,18,32,0.75);
+    border-bottom:1px solid var(--line-soft);
+  }
+  nav .wrap{ display:flex; align-items:center; justify-content:space-between; padding:16px 32px; max-width:1080px;}
+  .brand{ display:flex; align-items:center; gap:10px; font-family:var(--display); font-weight:600; letter-spacing:0.02em; font-size:15px;}
+  .brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--teal); box-shadow:0 0 10px var(--teal);}
+  nav .links{ display:flex; gap:28px; font-size:13px; color:var(--text-dim); }
+  nav .links a{ color:inherit; text-decoration:none; transition:color .2s; }
+  nav .links a:hover{ color:var(--teal); }
+
+  /* ---------- HERO ---------- */
+  .hero{ padding:96px 0 60px; position:relative; }
+  .eyebrow{
+    font-family:var(--mono); font-size:12px; color:var(--teal);
+    letter-spacing:0.14em; text-transform:uppercase; margin-bottom:18px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .eyebrow::before{ content:''; width:22px; height:1px; background:var(--teal); }
+
+  h1.title{
+    font-family:var(--display); font-weight:600;
+    font-size:clamp(40px, 6vw, 68px);
+    line-height:1.04; letter-spacing:-0.02em;
+    max-width:820px;
+  }
+  h1.title .accent{ color:var(--teal); }
+
+  .subtitle{
+    margin-top:22px; font-size:18px; color:var(--text-dim); max-width:620px; font-weight:400;
+  }
+
+  /* ---------- GRAPH VISUAL ---------- */
+  .graph-stage{
+    margin-top:64px;
+    background:linear-gradient(180deg, var(--panel), var(--ink-2));
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:0;
+    position:relative;
+    overflow:hidden;
+  }
+  .stage-header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 22px; border-bottom:1px solid var(--line-soft);
+    font-family:var(--mono); font-size:12px; color:var(--text-faint);
+  }
+  .stage-header .traffic{ display:flex; gap:6px; }
+  .stage-header .traffic span{ width:9px; height:9px; border-radius:50%; background:var(--line); }
+  .status-pill{
+    display:flex; align-items:center; gap:7px;
+    font-family:var(--mono); font-size:12px; color:var(--teal);
+  }
+  .status-pill .pulse{
+    width:7px; height:7px; border-radius:50%; background:var(--teal);
+    box-shadow:0 0 8px var(--teal);
+    animation:pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes pulse{ 0%,100%{opacity:1; transform:scale(1);} 50%{opacity:.4; transform:scale(.7);} }
+
+  .stage-body{ display:grid; grid-template-columns: 1fr; }
+  @media(min-width:760px){ .stage-body{ grid-template-columns: 1.55fr 1fr; } }
+
+  .graph-canvas{ padding:20px; }
+  svg#graphSvg{ width:100%; height:auto; display:block; }
+
+  .node-box{ transition: filter .25s; }
+  .node-rect{
+    fill:var(--ink-2); stroke:var(--line); stroke-width:1.5;
+    transition: stroke .3s, fill .3s;
+  }
+  .node-box.active .node-rect{ stroke:var(--teal); fill:#122A2A; filter:drop-shadow(0 0 10px rgba(51,230,200,0.45)); }
+  .node-box.done .node-rect{ stroke:var(--teal-dim); }
+  .node-label{ fill:var(--text); font-family:var(--mono); font-size:12px; font-weight:600; }
+  .node-sub{ fill:var(--text-faint); font-family:var(--mono); font-size:9.5px; }
+  .node-box.active .node-label{ fill:var(--teal); }
+
+  .edge-path{ fill:none; stroke:var(--line); stroke-width:1.5; }
+  .edge-path.cond{ stroke-dasharray:3 4; }
+  .edge-arrow{ fill:var(--line); }
+
+  .term-node circle{ fill:none; stroke:var(--text-faint); stroke-width:1.5; }
+  .term-node text{ fill:var(--text-faint); font-family:var(--mono); font-size:10px; }
+
+  .packet{
+    filter:drop-shadow(0 0 6px var(--teal));
+  }
+  .packet circle{ fill:var(--teal); }
+
+  .decision-diamond{ fill:var(--ink-2); stroke:var(--line); stroke-width:1.5; transition:stroke .3s, fill .3s;}
+  .node-box.active .decision-diamond{ stroke:var(--amber); fill:#2A2214; filter:drop-shadow(0 0 10px rgba(255,180,84,0.4)); }
+  .node-box.active .decision-diamond ~ .node-label{ fill:var(--amber); }
+
+  /* state panel */
+  .state-panel{
+    border-left:1px solid var(--line-soft);
+    padding:20px 22px;
+    display:flex; flex-direction:column;
+    background:rgba(0,0,0,0.12);
+  }
+  .state-panel h4{
+    font-family:var(--mono); font-size:11px; color:var(--text-faint);
+    text-transform:uppercase; letter-spacing:0.1em; margin-bottom:12px;
+  }
+  .state-json{
+    font-family:var(--mono); font-size:12.5px; line-height:1.85;
+    color:var(--text-dim); flex:1;
+  }
+  .state-json .key{ color:var(--violet); }
+  .state-json .str{ color:var(--teal); }
+  .state-json .brace{ color:var(--text-faint); }
+  .state-json .line{ opacity:0; transform:translateX(-6px); transition:opacity .4s, transform .4s; }
+  .state-json .line.show{ opacity:1; transform:translateX(0); }
+
+  .step-log{ margin-top:18px; font-family:var(--mono); font-size:11px; color:var(--text-faint); }
+  .step-log .current{ color:var(--amber); }
+
+  /* ---------- SECTION SHARED ---------- */
+  section{ padding:100px 0; position:relative; }
+  .section-head{ max-width:640px; margin-bottom:56px; }
+  .section-num{ font-family:var(--mono); font-size:12px; color:var(--teal); letter-spacing:0.1em; margin-bottom:14px; }
+  h2{ font-family:var(--display); font-weight:600; font-size:clamp(28px,3.4vw,38px); letter-spacing:-0.01em; }
+  .section-desc{ margin-top:14px; color:var(--text-dim); font-size:16px; max-width:560px; }
+
+  /* ---------- CONCEPT GRID ---------- */
+  .concept-grid{ display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1px; background:var(--line-soft); border:1px solid var(--line-soft); border-radius:14px; overflow:hidden; }
+  .concept-card{ background:var(--panel); padding:26px 24px; transition:background .25s; }
+  .concept-card:hover{ background:var(--ink-2); }
+  .concept-glyph{ width:34px; height:34px; margin-bottom:16px; }
+  .concept-card h3{ font-family:var(--display); font-size:16px; font-weight:600; margin-bottom:9px; color:var(--text); }
+  .concept-card p{ font-size:13.5px; color:var(--text-dim); line-height:1.65; }
+
+  /* ---------- LOOP DEMO ---------- */
+  .loop-demo{
+    display:grid; grid-template-columns:1fr; gap:36px; align-items:center;
+  }
+  @media(min-width:760px){ .loop-demo{ grid-template-columns:1fr 1fr; } }
+  .loop-copy p{ color:var(--text-dim); font-size:15px; margin-bottom:16px; }
+  .loop-copy .cta-note{ font-family:var(--mono); font-size:12px; color:var(--amber); margin-top:20px; display:flex; align-items:center; gap:8px;}
+  .loop-copy .cta-note::before{ content:'↻'; font-size:15px; }
+
+  .loop-visual{ background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:24px; }
+  svg#loopSvg{ width:100%; height:auto; }
+
+  /* ---------- COMPARISON ---------- */
+  .compare-grid{ display:grid; grid-template-columns:1fr; gap:20px; }
+  @media(min-width:760px){ .compare-grid{ grid-template-columns:1fr 1fr; } }
+  .compare-card{ border:1px solid var(--line); border-radius:14px; padding:28px; background:var(--panel); }
+  .compare-card.chain{ }
+  .compare-card.graph{ border-color:var(--teal-dim); background:linear-gradient(180deg, rgba(51,230,200,0.06), var(--panel)); }
+  .compare-card h4{ font-family:var(--mono); font-size:12px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); margin-bottom:18px; }
+  .compare-card.graph h4{ color:var(--teal); }
+  .mini-flow{ display:flex; align-items:center; gap:6px; margin-bottom:22px; flex-wrap:wrap; }
+  .mini-node{ font-family:var(--mono); font-size:11px; padding:6px 10px; border:1px solid var(--line); border-radius:6px; color:var(--text-dim); background:var(--ink-2); }
+  .mini-arrow{ color:var(--text-faint); font-size:13px; }
+  .compare-card ul{ list-style:none; }
+  .compare-card li{ font-size:13.5px; color:var(--text-dim); padding:8px 0; border-top:1px solid var(--line-soft); }
+  .compare-card li:first-of-type{ border-top:none; }
+  .compare-card li span.mark{ color:var(--text-faint); margin-right:8px; }
+  .compare-card.graph li span.mark{ color:var(--teal); }
+
+  /* ---------- CODE ---------- */
+  .code-block{
+    background:#0A1220; border:1px solid var(--line); border-radius:12px;
+    padding:22px 24px; font-family:var(--mono); font-size:12.5px; line-height:1.9;
+    overflow-x:auto; color:var(--text-dim);
+  }
+  .code-block .kw{ color:var(--violet); }
+  .code-block .fn{ color:var(--teal); }
+  .code-block .str{ color:#F2C078; }
+  .code-block .cm{ color:var(--text-faint); font-style:italic; }
+
+  /* ---------- FOOTER ---------- */
+  footer{ padding:60px 0 80px; border-top:1px solid var(--line-soft); }
+  footer .foot-row{ display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:16px; }
+  footer p{ font-family:var(--mono); font-size:12px; color:var(--text-faint); }
+
+  /* reveal-on-scroll */
+  .reveal{ opacity:0; transform:translateY(18px); transition:opacity .7s ease, transform .7s ease; }
+  .reveal.in{ opacity:1; transform:translateY(0); }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation-duration:0.01ms !important; animation-iteration-count:1 !important; transition-duration:0.01ms !important; }
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-backdrop"></div>
+
+<nav>
+  <div class="wrap">
+    <div class="brand"><span class="dot"></span> LangGraph Notes</div>
+    <div class="links">
+      <a href="#concepts">Concepts</a>
+      <a href="#loops">Loops</a>
+      <a href="#compare">Chain vs Graph</a>
+      <a href="#code">Code</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="eyebrow">Orchestration framework</div>
+    <h1 class="title">State moves through a <span class="accent">graph</span>, not down a line.</h1>
+    <p class="subtitle">LangGraph models an LLM application as nodes and edges over a shared state object — enabling branches, loops, and pauses that a linear chain can't express.</p>
+
+    <div class="graph-stage">
+      <div class="stage-header">
+        <div class="traffic"><span></span><span></span><span></span></div>
+        <span>graph.invoke()</span>
+        <div class="status-pill"><span class="pulse"></span> <span id="statusText">running</span></div>
+      </div>
+      <div class="stage-body">
+        <div class="graph-canvas">
+          <svg id="graphSvg" viewBox="0 0 560 300" xmlns="http://www.w3.org/2000/svg">
+            <!-- edges (drawn first, under nodes) -->
+            <path class="edge-path" id="e-start-retrieve" d="M 60 150 L 130 150" />
+            <path class="edge-path" id="e-retrieve-check" d="M 210 150 L 280 150" />
+            <path class="edge-path cond" id="e-check-generate" d="M 340 130 L 400 90" />
+            <path class="edge-path cond" id="e-check-retrieve" d="M 310 175 C 260 240, 170 240, 170 190" />
+            <path class="edge-path" id="e-generate-end" d="M 460 90 L 500 90" />
+
+            <!-- arrowheads -->
+            <polygon class="edge-arrow" points="130,150 120,145 120,155" />
+            <polygon class="edge-arrow" points="280,150 270,145 270,155" />
+            <polygon class="edge-arrow" points="400,90 391,86 388,95" />
+            <polygon class="edge-arrow" points="170,190 178,183 162,180" />
+            <polygon class="edge-arrow" points="500,90 490,85 490,95" />
+
+            <!-- START -->
+            <g class="term-node">
+              <circle cx="40" cy="150" r="18" />
+              <text x="40" y="154" text-anchor="middle">START</text>
+            </g>
+
+            <!-- retrieve node -->
+            <g class="node-box" id="node-retrieve">
+              <rect class="node-rect" x="130" y="128" width="80" height="44" rx="8" />
+              <text class="node-label" x="170" y="147" text-anchor="middle">retrieve</text>
+              <text class="node-sub" x="170" y="161" text-anchor="middle">fetch docs</text>
+            </g>
+
+            <!-- decision node -->
+            <g class="node-box" id="node-check">
+              <polygon class="decision-diamond" points="310,150 340,122 370,150 340,178" />
+              <text class="node-label" x="340" y="153" text-anchor="middle" font-size="10.5">enough?</text>
+            </g>
+
+            <!-- generate node -->
+            <g class="node-box" id="node-generate">
+              <rect class="node-rect" x="400" y="68" width="80" height="44" rx="8" />
+              <text class="node-label" x="440" y="87" text-anchor="middle">generate</text>
+              <text class="node-sub" x="440" y="101" text-anchor="middle">call LLM</text>
+            </g>
+
+            <!-- END -->
+            <g class="term-node">
+              <circle cx="520" cy="90" r="18" />
+              <text x="520" y="94" text-anchor="middle">END</text>
+            </g>
+
+            <!-- moving packet -->
+            <g class="packet" id="packet" style="opacity:0">
+              <circle r="5" />
+            </g>
+          </svg>
+        </div>
+
+        <div class="state-panel">
+          <h4>state (shared)</h4>
+          <div class="state-json" id="stateJson">
+            <div class="line"><span class="brace">{</span></div>
+            <div class="line"><span class="key">"question"</span>: <span class="str">"Explain LangGraph"</span>,</div>
+            <div class="line"><span class="key">"documents"</span>: [<span id="docCount">0</span>],</div>
+            <div class="line"><span class="key">"answer"</span>: <span id="answerVal" class="str">null</span></div>
+            <div class="line"><span class="brace">}</span></div>
+          </div>
+          <div class="step-log" id="stepLog">→ waiting to start…</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section id="concepts">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="section-num">01 — Building blocks</div>
+      <h2>Six ideas cover most of the framework.</h2>
+      <p class="section-desc">Everything above — the boxes, the arrows, the diamond — maps to one of these primitives.</p>
+    </div>
+
+    <div class="concept-grid reveal">
+      <div class="concept-card">
+        <svg class="concept-glyph" viewBox="0 0 34 34"><rect x="4" y="4" width="26" height="26" rx="5" fill="none" stroke="#33E6C8" stroke-width="1.6"/><path d="M11 17h12M17 11v12" stroke="#33E6C8" stroke-width="1.6"/></svg>
+        <h3>State</h3>
+        <p>A typed object (TypedDict / Pydantic model) that flows through every node. Each field can define its own merge behavior via a reducer.</p>
+      </div>
+      <div class="concept-card">
+        <svg class="concept-glyph" viewBox="0 0 34 34"><rect x="5" y="9" width="24" height="16" rx="4" fill="none" stroke="#33E6C8" stroke-width="1.6"/></svg>
+        <h3>Node</h3>
+        <p>A Python function that receives the current state and returns a partial update. Can call an LLM, a tool, or plain logic.</p>
+      </div>
+      <div class="concept-card">
+        <svg class="concept-glyph" viewBox="0 0 34 34"><line x1="4" y1="17" x2="26" y2="17" stroke="#33E6C8" stroke-width="1.6"/><polygon points="26,17 20,13 20,21" fill="#33E6C8"/></svg>
+        <h3>Edge</h3>
+        <p>A fixed connection: after node A finishes, node B always runs next. No decision involved.</p>
+      </div>
+      <div class="concept-card">
+        <svg class="concept-glyph" viewBox="0 0 34 34"><polygon points="17,4 30,17 17,30 4,17" fill="none" stroke="#FFB454" stroke-width="1.6"/></svg>
+        <h3>Conditional edge</h3>
+        <p>A routing function inspects the state at runtime and picks the next node — this is what makes branches and loops possible.</p>
+      </div>
+      <div class="concept-card">
+        <svg class="concept-glyph" viewBox="0 0 34 34"><circle cx="17" cy="17" r="12" fill="none" stroke="#9B8CFF" stroke-width="1.6"/><path d="M17 10v7l5 3" stroke="#9B8CFF" stroke-width="1.6" fill="none"/></svg>
+        <h3>Checkpointer</h3>
+        <p>Persists state after every step, keyed by a thread_id — enabling resumability, multi-turn memory, and time travel.</p>
+      </div>
+      <div class="concept-card">
+        <svg class="concept-glyph" viewBox="0 0 34 34"><rect x="5" y="5" width="10" height="10" rx="2" fill="none" stroke="#33E6C8" stroke-width="1.5"/><rect x="19" y="19" width="10" height="10" rx="2" fill="none" stroke="#33E6C8" stroke-width="1.5"/><path d="M15 10h5v9" stroke="#33E6C8" stroke-width="1.5" fill="none"/></svg>
+        <h3>Interrupt</h3>
+        <p>Pauses execution at a chosen node so a human can review or edit state before the graph resumes — human-in-the-loop.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="loops">
+  <div class="wrap">
+    <div class="loop-demo">
+      <div class="loop-copy reveal">
+        <div class="section-num">02 — What a chain can't do</div>
+        <h2 style="margin-bottom:18px;">Cycles are ordinary in a graph.</h2>
+        <p>A plain chain runs forward once. If <code style="font-family:var(--mono); color:var(--teal); font-size:13px;">retrieve</code> comes back empty, a chain has no way to try again — it just continues with nothing.</p>
+        <p>In LangGraph, the conditional edge after <code style="font-family:var(--mono); color:var(--amber); font-size:13px;">enough?</code> can route straight back to <code style="font-family:var(--mono); color:var(--teal); font-size:13px;">retrieve</code>, and the loop continues until the routing function is satisfied.</p>
+        <div class="cta-note">the dashed line above is exactly this loop</div>
+      </div>
+      <div class="loop-visual reveal">
+        <svg id="loopSvg" viewBox="0 0 320 200" xmlns="http://www.w3.org/2000/svg">
+          <path d="M 90 60 C 40 60, 40 140, 90 140" fill="none" stroke="#22334D" stroke-width="1.5" stroke-dasharray="3 4"/>
+          <rect x="90" y="80" width="90" height="40" rx="8" fill="#0F1B2E" stroke="#22334D" stroke-width="1.5"/>
+          <text x="135" y="105" text-anchor="middle" fill="#EAF0F7" font-family="'JetBrains Mono',monospace" font-size="12">retrieve</text>
+
+          <path d="M 180 100 L 220 100" stroke="#22334D" stroke-width="1.5"/>
+          <polygon points="220,100 211,96 211,104" fill="#22334D"/>
+          <polygon points="220,100 250,72 280,100 250,128" fill="#0F1B2E" stroke="#22334D" stroke-width="1.5"/>
+          <text x="250" y="104" text-anchor="middle" fill="#EAF0F7" font-family="'JetBrains Mono',monospace" font-size="10">enough?</text>
+
+          <path d="M 250 128 C 250 165, 135 165, 90 140" fill="none" stroke="#FFB454" stroke-width="1.6" stroke-dasharray="4 5" id="loopBackPath"/>
+          <polygon points="90,140 100,136 99,144" fill="#FFB454"/>
+          <text x="170" y="180" text-anchor="middle" fill="#FFB454" font-family="'JetBrains Mono',monospace" font-size="10">no → loop back</text>
+
+          <circle id="loopPacket" r="4.5" fill="#FFB454" style="filter:drop-shadow(0 0 5px #FFB454)"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="compare">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="section-num">03 — When to reach for which</div>
+      <h2>Chain vs. graph, side by side.</h2>
+    </div>
+
+    <div class="compare-grid reveal">
+      <div class="compare-card chain">
+        <h4>Chain</h4>
+        <div class="mini-flow">
+          <span class="mini-node">prompt</span><span class="mini-arrow">→</span>
+          <span class="mini-node">model</span><span class="mini-arrow">→</span>
+          <span class="mini-node">parser</span>
+        </div>
+        <ul>
+          <li><span class="mark">·</span>Fixed, linear sequence decided at build time</li>
+          <li><span class="mark">·</span>No native cycles or branching</li>
+          <li><span class="mark">·</span>No built-in persistence between runs</li>
+          <li><span class="mark">·</span>Simple to read, simple to debug</li>
+          <li><span class="mark">·</span>Best for predictable, single-pass pipelines</li>
+        </ul>
+      </div>
+      <div class="compare-card graph">
+        <h4>Graph</h4>
+        <div class="mini-flow">
+          <span class="mini-node">retrieve</span><span class="mini-arrow">→</span>
+          <span class="mini-node">enough?</span><span class="mini-arrow">↻ / →</span>
+          <span class="mini-node">generate</span>
+        </div>
+        <ul>
+          <li><span class="mark">✓</span>Routing decided at runtime by state</li>
+          <li><span class="mark">✓</span>Native cycles, branches, and rejoins</li>
+          <li><span class="mark">✓</span>Checkpointed state — resumable, replayable</li>
+          <li><span class="mark">✓</span>Supports pausing for human review</li>
+          <li><span class="mark">✓</span>Best for agentic, iterative, multi-agent work</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="code">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div class="section-num">04 — In practice</div>
+      <h2>The graph behind the animation above.</h2>
+    </div>
+    <div class="code-block reveal">
+<span class="cm"># define state, nodes, and routing</span>
+<span class="kw">from</span> langgraph.graph <span class="kw">import</span> StateGraph, START, END
+
+<span class="kw">def</span> <span class="fn">should_continue</span>(state):
+    <span class="kw">if</span> len(state[<span class="str">"documents"</span>]) == 0:
+        <span class="kw">return</span> <span class="str">"retrieve"</span>   <span class="cm"># loop back</span>
+    <span class="kw">return</span> <span class="str">"generate"</span>
+
+graph = <span class="fn">StateGraph</span>(AgentState)
+graph.<span class="fn">add_node</span>(<span class="str">"retrieve"</span>, retrieve)
+graph.<span class="fn">add_node</span>(<span class="str">"generate"</span>, generate)
+
+graph.<span class="fn">add_edge</span>(START, <span class="str">"retrieve"</span>)
+graph.<span class="fn">add_conditional_edges</span>(<span class="str">"retrieve"</span>, should_continue,
+    {<span class="str">"retrieve"</span>: <span class="str">"retrieve"</span>, <span class="str">"generate"</span>: <span class="str">"generate"</span>})
+graph.<span class="fn">add_edge</span>(<span class="str">"generate"</span>, END)
+
+app = graph.<span class="fn">compile</span>()
+</div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot-row">
+    <p>LangGraph — Explanatory Notes · animated overview</p>
+    <p>state → nodes → edges → checkpoints</p>
+  </div>
+</footer>
+
+<script>
+  // ---- reveal on scroll ----
+  const revealEls = document.querySelectorAll('.reveal');
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{ if(e.isIntersecting){ e.target.classList.add('in'); } });
+  }, {threshold:0.15});
+  revealEls.forEach(el=>io.observe(el));
+
+  // ---- main graph animation ----
+  const nodeRetrieve = document.getElementById('node-retrieve');
+  const nodeCheck = document.getElementById('node-check');
+  const nodeGenerate = document.getElementById('node-generate');
+  const packet = document.getElementById('packet');
+  const packetCircle = packet.querySelector('circle');
+  const statusText = document.getElementById('statusText');
+  const stepLog = document.getElementById('stepLog');
+  const docCount = document.getElementById('docCount');
+  const answerVal = document.getElementById('answerVal');
+  const lines = document.querySelectorAll('#stateJson .line');
+
+  const paths = {
+    startRetrieve: document.getElementById('e-start-retrieve'),
+    retrieveCheck: document.getElementById('e-retrieve-check'),
+    checkGenerate: document.getElementById('e-check-generate'),
+    checkRetrieve: document.getElementById('e-check-retrieve'),
+    generateEnd: document.getElementById('e-generate-end'),
+  };
+
+  function clearActive(){
+    [nodeRetrieve, nodeCheck, nodeGenerate].forEach(n=>n.classList.remove('active'));
+  }
+
+  function movePacketAlong(pathEl, duration, onDone){
+    const len = pathEl.getTotalLength();
+    packet.style.opacity = 1;
+    const start = performance.now();
+    function frame(now){
+      let t = Math.min((now - start) / duration, 1);
+      const pt = pathEl.getPointAtLength(t * len);
+      packet.setAttribute('transform', `translate(${pt.x},${pt.y})`);
+      if(t < 1){ requestAnimationFrame(frame); } else if(onDone){ onDone(); }
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function showLines(){
+    lines.forEach((l,i)=> setTimeout(()=> l.classList.add('show'), i*90));
+  }
+
+  let loopedOnce = false;
+
+  function sequence(){
+    clearActive();
+    packet.style.opacity = 0;
+    docCount.textContent = '0';
+    answerVal.textContent = 'null';
+    answerVal.classList.add('str');
+    lines.forEach(l=>l.classList.remove('show'));
+    statusText.textContent = 'running';
+    stepLog.innerHTML = '→ <span class="current">START</span>';
+    showLines();
+
+    setTimeout(()=>{
+      movePacketAlong(paths.startRetrieve, 700, ()=>{
+        nodeRetrieve.classList.add('active');
+        stepLog.innerHTML = '→ entering <span class="current">retrieve</span>';
+
+        setTimeout(()=>{
+          nodeRetrieve.classList.remove('active');
+          nodeRetrieve.classList.add('done');
+          docCount.textContent = loopedOnce ? '3' : '0';
+          movePacketAlong(paths.retrieveCheck, 700, ()=>{
+            nodeCheck.classList.add('active');
+            stepLog.innerHTML = loopedOnce
+              ? '→ <span class="current">enough?</span> — yes, 3 docs found'
+              : '→ <span class="current">enough?</span> — no docs found';
+
+            setTimeout(()=>{
+              nodeCheck.classList.remove('active');
+
+              if(!loopedOnce){
+                // loop back to retrieve
+                loopedOnce = true;
+                movePacketAlong(paths.checkRetrieve, 900, ()=>{
+                  nodeRetrieve.classList.add('active');
+                  stepLog.innerHTML = '→ <span class="current">retrieve</span> again (looped)';
+                  setTimeout(()=>{
+                    nodeRetrieve.classList.remove('active');
+                    nodeRetrieve.classList.add('done');
+                    docCount.textContent = '3';
+                    movePacketAlong(paths.retrieveCheck, 700, ()=>{
+                      nodeCheck.classList.add('active');
+                      stepLog.innerHTML = '→ <span class="current">enough?</span> — yes, 3 docs found';
+                      setTimeout(()=>{
+                        nodeCheck.classList.remove('active');
+                        proceedToGenerate();
+                      }, 900);
+                    });
+                  }, 900);
+                });
+              } else {
+                proceedToGenerate();
+              }
+            }, 900);
+          });
+        }, 900);
+      });
+    }, 500);
+  }
+
+  function proceedToGenerate(){
+    movePacketAlong(paths.checkGenerate, 750, ()=>{
+      nodeGenerate.classList.add('active');
+      stepLog.innerHTML = '→ <span class="current">generate</span> — calling LLM';
+      answerVal.textContent = '"…streaming"';
+
+      setTimeout(()=>{
+        nodeGenerate.classList.remove('active');
+        nodeGenerate.classList.add('done');
+        answerVal.textContent = '"LangGraph explained."';
+        movePacketAlong(paths.generateEnd, 600, ()=>{
+          statusText.textContent = 'done';
+          stepLog.innerHTML = '→ reached <span class="current">END</span>';
+          packet.style.opacity = 0;
+
+          setTimeout(()=>{
+            nodeRetrieve.classList.remove('done');
+            nodeGenerate.classList.remove('done');
+            loopedOnce = false;
+            sequence();
+          }, 2600);
+        });
+      }, 1300);
+    });
+  }
+
+  sequence();
+
+  // ---- small loop demo animation ----
+  const loopBackPath = document.getElementById('loopBackPath');
+  const loopPacket = document.getElementById('loopPacket');
+  const retrievePath = null;
+
+  function animateLoopDemo(){
+    // travel: retrieve box -> diamond -> loop back -> retrieve box, repeating
+    const seq = [
+      {x1:135, y1:120, x2:250, y2:100, dur:900},
+    ];
+    let t0 = performance.now();
+    function seg1(now){
+      let t = Math.min((now - t0)/900, 1);
+      loopPacket.setAttribute('cx', 135 + (250-135)*t);
+      loopPacket.setAttribute('cy', 120 + (100-120)*t);
+      if(t<1){ requestAnimationFrame(seg1); } else { seg2Start(); }
+    }
+    function seg2Start(){
+      t0 = performance.now();
+      requestAnimationFrame(seg2);
+    }
+    function seg2(now){
+      const len = loopBackPath.getTotalLength();
+      let t = Math.min((now - t0)/1100, 1);
+      const pt = loopBackPath.getPointAtLength(t*len);
+      loopPacket.setAttribute('cx', pt.x);
+      loopPacket.setAttribute('cy', pt.y);
+      if(t<1){ requestAnimationFrame(seg2); } else { setTimeout(()=>{ t0=performance.now(); requestAnimationFrame(seg1); }, 500); }
+    }
+    requestAnimationFrame(seg1);
+  }
+  animateLoopDemo();
+</script>
+
+</body>
+</html>
