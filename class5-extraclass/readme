@@ -1,1 +1,23 @@
-
+What problem it solves
+Traditional LLM apps use a single model with a single prompt to do everything. AutoGen's core idea is that complex tasks are better solved by multiple specialized agents talking to each other rather than one agent trying to do it all — similar to how a team of specialists outperforms a single generalist.
+The foundational concept: ConversableAgent
+Every agent in AutoGen inherits from one primitive class, ConversableAgent. An agent can:
+Send and receive messages
+Generate replies (via an LLM, a human, or code execution)
+Hold onto conversation state
+Two common specializations:
+AssistantAgent – LLM-backed, solves tasks, writes code, gives suggestions
+UserProxyAgent – represents the human (or executes code on their behalf) and can auto-reply, ask for human input, or run generated code in a sandbox
+Core theoretical patterns
+1. Two-agent conversation – The simplest case: an Assistant and a UserProxy go back and forth (e.g., Assistant writes code → UserProxy executes it → reports errors back → Assistant fixes it) until a termination condition is met.
+2. GroupChat / multi-agent orchestration – Multiple agents (e.g., a coder, a critic, a planner) participate in a shared conversation, coordinated by a GroupChatManager that decides who speaks next — round-robin, LLM-selected, or custom logic.
+3. Nested/hierarchical chats – An agent can spawn its own sub-conversation to solve a subtask, then return the result to the parent conversation — useful for decomposition.
+4. Human-in-the-loop – Because UserProxyAgent can pause for human approval, AutoGen bakes oversight into the conversation loop rather than bolting it on afterward.
+5. Code execution as a first-class citizen – Agents can generate code, execute it in an isolated environment, and use the output (including errors) as feedback for the next turn — this is the basis of AutoGen's strength in coding/automation tasks.
+Newer architecture (v0.4+)
+AutoGen was rewritten around an actor-model runtime:
+autogen-core – async, event-driven runtime where agents are addressable actors passing typed messages (adds observability via OpenTelemetry)
+autogen-agentchat – the high-level API you'd actually teach (AssistantAgent, RoundRobinGroupChat, SelectorGroupChat, MagenticOneGroupChat orchestrator)
+autogen-ext – integrations layer (tools, model clients, etc.)
+One important thing to flag if you're teaching this now
+AutoGen (the Microsoft Research project) went into maintenance mode in late 2025 — the last major release was v0.7.5, and Microsoft is steering new projects toward the Microsoft Agent Framework (MAF), GA since April 2026, which adds durability, governance, and enterprise observability on top of similar conversational-agent theory. The community fork AG2 continues active development of the original AutoGen codebase. For your Agentic AI Development Track, the underlying theory (conversable agents, group chat orchestration, human-in-the-loop) still transfers directly — but worth noting to learners which package name they should actually pip install for a new project.
